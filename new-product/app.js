@@ -1746,3 +1746,4 @@ applyUnderstoodSkin(understoodSkin);
 render();
 resizeInput();
 checkLive();
+if (new URLSearchParams(location.search).get('draft') === '1') enterDraftMode();
