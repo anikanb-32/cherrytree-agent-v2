@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Cherrytree Agent — Dummy</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Outfit:wght@300;400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <aside class="sidebar" aria-label="Sections">
+        <div class="logo">
+          <img src="cherries.png" alt="Cherrytree" />
+        </div>
+        <div class="company-name">Cherrytree</div>
+        <div class="progress-label" id="progress-label">0% complete</div>
+        <div class="progress-bar-track">
+          <div class="progress-bar-fill" id="progress-fill"></div>
+        </div>
+        <div class="sections-remaining" id="sections-remaining"></div>
+        <div class="nav-section-label">Sections</div>
+        <nav class="nav-list" id="tabs"></nav>
+        <div class="skin-switch" id="skin-switch" role="group" aria-label="How memory is shown">
+          <button type="button" data-skin="pill" title="Expandable list" aria-pressed="true">1</button>
+          <button type="button" data-skin="sentence" title="Living sentence" aria-pressed="false">2</button>
+          <button type="button" data-skin="marks" title="Tokens in the chat" aria-pressed="false">3</button>
+          <button type="button" data-skin="bubbles" title="Highlights · next in the thread" aria-pressed="false">4</button>
+          <button type="button" data-skin="inline" title="Left-aligned replies" aria-pressed="false">5</button>
+          <button type="button" data-skin="bubbles-side" title="Highlights · next beside input" aria-pressed="false">4b</button>
+          <button type="button" data-skin="bubbles-line" title="Highlights · next as text" aria-pressed="false">4c</button>
+        </div>
+      </aside>
+
+      <div class="workspace">
+      <div class="page-progress" aria-label="Interview progress">
+        <div class="page-progress__fill" id="page-progress"></div>
+      </div>
+      <div class="panes">
+        <div class="pane pane--chat">
+          <main class="transcript" id="transcript">
+            <div class="prompt" id="prompt"></div>
+            <div class="memory" id="memory" hidden></div>
+            <div class="thread" id="thread"></div>
+          </main>
+
+          <aside class="collected" id="collected" hidden aria-label="What I understood"></aside>
+
+          <footer class="composer-wrap">
+            <div class="choices" id="choices" hidden></div>
+            <div class="composer-row">
+              <div class="composer">
+                <textarea
+                  id="input"
+                  class="composer__input"
+                  rows="1"
+                  placeholder="Answer, or ask a question…"
+                  autofocus
+                ></textarea>
+                <button type="button" class="composer__send" id="send" aria-label="Send" disabled>↑</button>
+              </div>
+            </div>
+            <p class="hint">
+              A working draft with claude api
+              <button type="button" class="hint__live" id="live-key">Use a live model</button>
+            </p>
+          </footer>
+        </div>
+
+        <div class="scrim" id="scrim" aria-hidden="true"></div>
+
+        <aside class="draft-panel" id="draft-panel" aria-label="Agreement preview">
+          <button
+            type="button"
+            class="draft-tab"
+            id="draft-tab"
+            aria-expanded="false"
+            aria-label="Show the sample agreement"
+          ></button>
+          <button type="button" class="draft-panel__close" id="draft-close" tabindex="-1" aria-label="Close">
+            ✕
+          </button>
+          <div class="draft-panel__body" id="draft-body"></div>
+        </aside>
+      </div>
+      </div>
+    </div>
+
+    <div class="studio studio--rail-closed" id="studio" hidden>
+      <header class="studio__bar">
+        <p class="studio__hint">Select text to rewrite or comment</p>
+        <span class="studio__crumb">Cofounder Agreement</span>
+        <span class="studio__meta">Draft · unexecuted</span>
+      </header>
+      <div class="studio__body">
+        <div class="studio__main">
+          <div class="studio-pop" id="studio-select" hidden>
+            <button type="button" class="studio-pop__close" id="studio-pop-close" aria-label="Close">×</button>
+            <p class="studio-pop__quote" id="studio-pop-quote"></p>
+            <textarea
+              id="studio-pop-note"
+              class="studio-pop__field"
+              rows="3"
+              placeholder="Write a comment or a rewrite…"
+            ></textarea>
+            <div class="studio-pop__row">
+              <button type="button" class="studio-pop__ghost" id="studio-pop-comment">Add Comment</button>
+              <button type="button" class="studio-pop__apply" id="studio-pop-apply">Apply</button>
+            </div>
+          </div>
+          <button type="button" class="studio__rail-tab" id="studio-rail-tab">Updates</button>
+          <div class="studio__scroll">
+            <div class="studio__page">
+              <article class="studio__doc" id="studio-doc" contenteditable="true" spellcheck="false"></article>
+            </div>
+          </div>
+        </div>
+        <aside class="studio__rail" id="studio-rail" aria-label="Updates">
+          <div class="studio__rail-head">
+            <div class="studio__rail-title">
+              <h2>Updates</h2>
+              <button type="button" class="studio__rail-toggle" id="studio-rail-toggle" aria-expanded="false" aria-label="Show updates">›</button>
+            </div>
+            <div class="studio__toggle" id="studio-toggle" role="tablist" aria-label="Update type">
+              <button type="button" role="tab" data-filter="edits" aria-selected="true">Edits</button>
+              <button type="button" role="tab" data-filter="comments" aria-selected="false">Comments</button>
+            </div>
+          </div>
+          <div class="studio__edits" id="studio-edits"></div>
+          <div class="studio__actions">
+            <button type="button" class="studio__reject" id="studio-reject">× Reject</button>
+            <button type="button" class="studio__next" id="studio-next">Next →</button>
+          </div>
+        </aside>
+      </div>
+    </div>
+
+    <script src="conversation.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
