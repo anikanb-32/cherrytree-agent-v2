@@ -862,7 +862,7 @@ export default function App() {
       {/* Main Header */}
       <header className="main-header">
         <div className="brand">
-          <img src="/cherries.png" alt="Cherrytree" className="brand__logo-img" />
+          <img src={`${import.meta.env.BASE_URL}cherries.png`} alt="Cherrytree" className="brand__logo-img" />
           <span className="brand__name">Cherrytree</span>
         </div>
 
