@@ -53,6 +53,14 @@ export default function App() {
   const [navOpen, setNavOpen] = useState(false);
   const [dockStyle, setDockStyle] = useState('panel');
   const [highlightAsk, setHighlightAsk] = useState('original');
+  const [discover, setDiscover] = useState('none');
+  const [hoverCueSpent, setHoverCueSpent] = useState(false);
+  const [toastOn, setToastOn] = useState(false);
+  const [demoOn, setDemoOn] = useState(false);
+  const [onceTaught, setOnceTaught] = useState(false);
+  const [nudgeSpent, setNudgeSpent] = useState(false);
+  const [doorOnceSpent, setDoorOnceSpent] = useState(false);
+  const [dockFieldFocused, setDockFieldFocused] = useState(false);
   const [keepAsking, setKeepAsking] = useState(false);
   const [flowMenuOpen, setFlowMenuOpen] = useState(false);
   const [embedding, setEmbedding] = useState(false);
@@ -71,6 +79,10 @@ export default function App() {
   const embedOriginRef = useRef(null);
   const questionGhostRef = useRef(null);
   const textGhostRef = useRef(null);
+  const cueRef = useRef(null);
+  const lineMarkRef = useRef(null);
+  const hoverChipRef = useRef(null);
+  const hoverTimerRef = useRef(null);
 
   // Auto-resize textarea in Flow 1 & 2
   useEffect(() => {
@@ -79,6 +91,20 @@ export default function App() {
       textareaRef.current.style.height = `${Math.max(38, textareaRef.current.scrollHeight)}px`;
     }
   }, [dumpText, flowStep]);
+
+  useEffect(() => {
+    if (discover !== 'toast') {
+      setToastOn(false);
+      return undefined;
+    }
+    setToastOn(true);
+    const timer = setTimeout(() => setToastOn(false), 3000);
+    return () => clearTimeout(timer);
+  }, [discover]);
+
+  useEffect(() => {
+    setDemoOn(discover === 'demo');
+  }, [discover]);
 
   useEffect(() => {
     if (selectionAsk) selectInputRef.current?.focus();
@@ -118,13 +144,22 @@ export default function App() {
   useEffect(() => {
     if (!selectionAsk) return undefined;
     function onPointerDown(event) {
-      if (event.target.closest('.select-ask, .flow-menu, .flow-toggle')) return;
-      setSelectionAsk(null);
-      setSelectInput('');
+      if (event.target.closest('.select-ask, .select-chip, .line-mark, .flow-menu, .flow-toggle')) return;
+      dismissSelection();
     }
     document.addEventListener('mousedown', onPointerDown);
     return () => document.removeEventListener('mousedown', onPointerDown);
   }, [selectionAsk]);
+
+  useLayoutEffect(() => {
+    if (discover !== 'once' || onceTaught || selectionAsk || embedding) return;
+    if (flowStep !== 'readback' && flowStep !== 'followup' && flowStep !== 'done') return;
+    const el =
+      transcriptRef.current?.querySelector('.highlight-needs') ||
+      transcriptRef.current?.querySelector('.highlight-kept');
+    if (!el) return;
+    openCardForElement(el);
+  }, [discover, onceTaught, selectionAsk, embedding, flowStep, currentTranscript]);
 
   // Slide the question and the reply up into the read-back, shrinking the question.
   useLayoutEffect(() => {
@@ -322,16 +357,30 @@ export default function App() {
     if (!text || !selection?.rangeCount || !body || !host) return;
     if (!body.contains(selection.anchorNode) || !body.contains(selection.focusNode)) return;
 
-    const rect = selection.getRangeAt(0).getBoundingClientRect();
+    const range = selection.getRangeAt(0);
+    const rect = range.getBoundingClientRect();
+    const endRect = range.getClientRects()[range.getClientRects().length - 1] || rect;
     const bounds = host.getBoundingClientRect();
     const width = Math.min(340, Math.max(0, bounds.width - 16));
     const left = Math.max(0, Math.min(rect.left - bounds.left, bounds.width - width));
     const span = selectionSpan(selection);
+    if (discover === 'nudge') setNudgeSpent(true);
+    const chip = discover === 'chip';
+    const chipWidth = 118;
+    let chipLeft = endRect.right - bounds.left + 8;
+    let chipTop = endRect.top - bounds.top + Math.max(0, (endRect.height - 24) / 2);
+    if (chipLeft + chipWidth > bounds.width) {
+      chipLeft = Math.max(0, endRect.right - bounds.left - chipWidth);
+      chipTop = endRect.bottom - bounds.top + 6;
+    }
     setSelectInput('');
     setSelectionAsk({
       text: span?.text || text,
       start: span?.start,
       end: span?.end,
+      stage: chip ? 'chip' : 'card',
+      chipTop,
+      chipLeft,
       top: rect.bottom - bounds.top + 10,
       left,
       width,
@@ -377,6 +426,7 @@ export default function App() {
       ? replyToQuestion(question, matched)
       : `About “${phrase}”: this is part of what the agreement has to say out loud.`;
     setAskedPhrases((prev) => (prev.includes(phrase) ? prev : [...prev, phrase]));
+    if (discover === 'hover' || discover === 'hoverInk') setHoverCueSpent(true);
     setSelectionAsk((prev) =>
       prev ? { ...prev, turns: [...(prev.turns || []), { question, answer }] } : prev,
     );
@@ -415,6 +465,231 @@ export default function App() {
   function chooseDockStyle(style) {
     setDockStyle(style);
     if (style !== 'ask') setKeepAsking(false);
+  }
+
+  function chooseDiscover(mode) {
+    const next = discover === mode ? 'none' : mode;
+    setDiscover(next);
+    setHoverCueSpent(false);
+    setOnceTaught(false);
+    setNudgeSpent(false);
+    setDoorOnceSpent(false);
+    setDockFieldFocused(false);
+    dockInputRef.current?.blur();
+    clearTimeout(hoverTimerRef.current);
+    cueRef.current?.classList.remove('is-on');
+    lineMarkRef.current?.classList.remove('is-on');
+    hoverChipRef.current?.classList.remove('is-on');
+    setSelectInput('');
+    setSelectionAsk(null);
+    if (next !== 'none' && flowStep !== 'readback' && flowStep !== 'followup' && flowStep !== 'done') {
+      setFlowDirectly('readback');
+    }
+  }
+
+  function dismissSelection() {
+    if (discover === 'once') setOnceTaught(true);
+    setSelectionAsk(null);
+    setSelectInput('');
+  }
+
+  function openCardForElement(el) {
+    const host = readbackRef.current;
+    if (!el || !host) return;
+    const start = Number(el.dataset.start);
+    const end = Number(el.dataset.end);
+    if (!Number.isInteger(start) || !Number.isInteger(end) || end <= start) return;
+    const text = currentTranscript.slice(start, end).replace(/\s+/g, ' ').trim();
+    if (!text) return;
+    const rect = el.getBoundingClientRect();
+    const bounds = host.getBoundingClientRect();
+    const width = Math.min(340, Math.max(0, bounds.width - 16));
+    const left = Math.max(0, Math.min(rect.left - bounds.left, bounds.width - width));
+    setSelectInput('');
+    setSelectionAsk({
+      text,
+      start,
+      end,
+      top: rect.bottom - bounds.top + 10,
+      left,
+      width,
+    });
+    window.getSelection()?.removeAllRanges();
+  }
+
+  function askPhrase(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (discover === 'doorOnce') setDoorOnceSpent(true);
+    const mark = event.currentTarget.closest('.highlight-needs, .highlight-kept');
+    if (mark) openCardForElement(mark);
+  }
+
+  function moveLineMark(event) {
+    const mark = lineMarkRef.current;
+    const host = readbackRef.current;
+    const body = transcriptRef.current;
+    if (!mark || !host || !body) return;
+    const caret = document.caretRangeFromPoint?.(event.clientX, event.clientY);
+    if (!caret || !body.contains(caret.startContainer)) {
+      mark.classList.remove('is-on');
+      return;
+    }
+    const rect = caret.getBoundingClientRect();
+    if (!rect.height) {
+      mark.classList.remove('is-on');
+      return;
+    }
+    const bounds = host.getBoundingClientRect();
+    const bodyRect = body.getBoundingClientRect();
+    mark.classList.add('is-on');
+    mark.style.left = `${bodyRect.left - bounds.left - 22}px`;
+    mark.style.top = `${rect.top - bounds.top + rect.height / 2}px`;
+    mark.dataset.x = String(event.clientX);
+    mark.dataset.y = String(event.clientY);
+  }
+
+  function moveHoverChip(event) {
+    const chip = hoverChipRef.current;
+    const host = readbackRef.current;
+    const body = transcriptRef.current;
+    if (!chip || !host || !body) return;
+    const caret = document.caretRangeFromPoint?.(event.clientX, event.clientY);
+    if (!caret || !body.contains(caret.startContainer)) {
+      chip.classList.remove('is-on');
+      return;
+    }
+    const rect = caret.getBoundingClientRect();
+    if (!rect.height) {
+      chip.classList.remove('is-on');
+      return;
+    }
+    const bounds = host.getBoundingClientRect();
+    const chipWidth = 118;
+    let left = rect.right - bounds.left + 8;
+    let top = rect.top - bounds.top + Math.max(0, (rect.height - 24) / 2);
+    if (left + chipWidth > bounds.width) {
+      left = Math.max(0, rect.right - bounds.left - chipWidth);
+      top = rect.bottom - bounds.top + 6;
+    }
+    chip.classList.add('is-on');
+    chip.style.left = `${left}px`;
+    chip.style.top = `${top}px`;
+    chip.dataset.x = String(event.clientX);
+    chip.dataset.y = String(event.clientY);
+  }
+
+  function openLineFromMark(mark = lineMarkRef.current) {
+    const body = transcriptRef.current;
+    const host = readbackRef.current;
+    if (!mark || !body || !host) return;
+    const x = Number(mark.dataset.x);
+    const y = Number(mark.dataset.y);
+    const caret = document.caretRangeFromPoint?.(x, y);
+    if (!caret || !body.contains(caret.startContainer)) return;
+    const probe = caret.getBoundingClientRect();
+    const spans = [];
+    const walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT);
+    let node = walker.nextNode();
+    while (node) {
+      if (!node.parentElement?.closest('.probe-tag, .phrase-ask, .line-mark')) {
+        const text = node.textContent || '';
+        let runStart = null;
+        for (let i = 0; i < text.length; i += 1) {
+          const range = document.createRange();
+          range.setStart(node, i);
+          range.setEnd(node, i + 1);
+          const rect = range.getBoundingClientRect();
+          const mid = (rect.top + rect.bottom) / 2;
+          const onLine = rect.height > 0 && mid >= probe.top - 2 && mid <= probe.bottom + 2;
+          if (onLine) {
+            if (runStart == null) runStart = i;
+          } else if (runStart != null) {
+            spans.push({ node, start: runStart, end: i });
+            runStart = null;
+          }
+        }
+        if (runStart != null) spans.push({ node, start: runStart, end: text.length });
+      }
+      node = walker.nextNode();
+    }
+    const abs = spans
+      .map((span) => {
+        const start = transcriptPoint(span.node, span.start);
+        const end = transcriptPoint(span.node, span.end);
+        return start == null || end == null ? null : { start, end };
+      })
+      .filter(Boolean);
+    if (!abs.length) return;
+    const start = Math.min(...abs.map((span) => span.start));
+    const end = Math.max(...abs.map((span) => span.end));
+    const text = currentTranscript.slice(start, end).replace(/\s+/g, ' ').trim();
+    if (!text) return;
+    const bounds = host.getBoundingClientRect();
+    const width = Math.min(340, Math.max(0, bounds.width - 16));
+    const left = Math.max(0, Math.min(probe.left - bounds.left, bounds.width - width));
+    setSelectInput('');
+    setSelectionAsk({
+      text,
+      start,
+      end,
+      top: probe.bottom - bounds.top + 10,
+      left,
+      width,
+    });
+    window.getSelection()?.removeAllRanges();
+  }
+
+  function onTranscriptMove(event) {
+    if ((discover === 'hover' || discover === 'hoverInk') && !hoverCueSpent) moveHoverCue(event);
+    else if (discover === 'rest') restHoverCue(event);
+    if (discover === 'margin') moveLineMark(event);
+    if (discover === 'blob') moveHoverChip(event);
+  }
+
+  function onTranscriptLeave(event) {
+    if (discover === 'hover' || discover === 'hoverInk' || discover === 'rest') hideHoverCue();
+    if (discover === 'margin' && !event.relatedTarget?.closest?.('.line-mark')) {
+      lineMarkRef.current?.classList.remove('is-on');
+    }
+    if (discover === 'blob' && !event.relatedTarget?.closest?.('.select-chip--float')) {
+      hoverChipRef.current?.classList.remove('is-on');
+    }
+  }
+
+  function moveHoverCue(event) {
+    const cue = cueRef.current;
+    const host = readbackRef.current;
+    if (!cue || !host) return;
+    const bounds = host.getBoundingClientRect();
+    cue.classList.add('is-on');
+    cue.style.left = `${event.clientX - bounds.left + 14}px`;
+    cue.style.top = `${event.clientY - bounds.top + 18}px`;
+  }
+
+  function hideHoverCue() {
+    clearTimeout(hoverTimerRef.current);
+    cueRef.current?.classList.remove('is-on');
+  }
+
+  function restHoverCue(event) {
+    const cue = cueRef.current;
+    const host = readbackRef.current;
+    if (!cue || !host) return;
+    cue.classList.remove('is-on');
+    const x = event.clientX;
+    const y = event.clientY;
+    clearTimeout(hoverTimerRef.current);
+    hoverTimerRef.current = setTimeout(() => {
+      const bounds = host.getBoundingClientRect();
+      cue.classList.add('is-on');
+      cue.style.left = `${x - bounds.left + 14}px`;
+      cue.style.top = `${y - bounds.top + 16}px`;
+    }, 600);
+  }
+
+  function openSelectionCard() {
+    setSelectionAsk((prev) => (prev ? { ...prev, stage: 'card' } : prev));
   }
 
   function leaveAskMode() {
@@ -602,6 +877,7 @@ export default function App() {
     // Each follow-up answer is its own paragraph under the original.
     const paragraphs = currentTranscript.split(/\n\n+/);
     let searchFrom = 0;
+    let doorPlaced = false;
 
     return paragraphs.map((paragraph, pIndex) => {
       const paraStart = currentTranscript.indexOf(paragraph, searchFrom);
@@ -633,6 +909,9 @@ export default function App() {
         const absEnd = paraStart + range.end;
 
         if (range.type === 'needs') {
+          const showDoor =
+            discover === 'door' || (discover === 'doorOnce' && !doorOnceSpent && !doorPlaced);
+          if (showDoor && discover === 'doorOnce') doorPlaced = true;
           nodes.push(
             <span
               key={spanKey}
@@ -642,6 +921,17 @@ export default function App() {
             >
               <ProbeTag id={range.probeId} />
               {renderPhrase(range.text, absStart)}
+              {showDoor && (
+                <button
+                  type="button"
+                  className="phrase-ask"
+                  onMouseDown={(event) => event.preventDefault()}
+                  onMouseUp={(event) => event.stopPropagation()}
+                  onClick={askPhrase}
+                >
+                  Ask
+                </button>
+              )}
             </span>,
           );
         } else if (range.type === 'selecting' || range.type === 'asked') {
@@ -666,6 +956,17 @@ export default function App() {
               title={flowStep === 'done' ? 'Click to drop' : undefined}
             >
               {renderPhrase(range.text, absStart)}
+              {discover === 'door' && (
+                <button
+                  type="button"
+                  className="phrase-ask"
+                  onMouseDown={(event) => event.preventDefault()}
+                  onMouseUp={(event) => event.stopPropagation()}
+                  onClick={askPhrase}
+                >
+                  Ask
+                </button>
+              )}
             </span>,
           );
         }
@@ -856,6 +1157,120 @@ export default function App() {
           chatbot
         </button>
       </div>
+      <div className="version-bar version-bar--dock version-bar--discover">
+        <button
+          type="button"
+          className={`version-btn ${discover === 'hover' ? 'is-active' : ''}`}
+          onClick={() => chooseDiscover('hover')}
+        >
+          select to ask
+        </button>
+        <button
+          type="button"
+          className={`version-btn ${discover === 'hoverInk' ? 'is-active' : ''}`}
+          onClick={() => chooseDiscover('hoverInk')}
+        >
+          select to ask black
+        </button>
+        <button
+          type="button"
+          className={`version-btn ${discover === 'toast' ? 'is-active' : ''}`}
+          onClick={() => chooseDiscover('toast')}
+        >
+          toast
+        </button>
+        <button
+          type="button"
+          className={`version-btn ${discover === 'demo' ? 'is-active' : ''}`}
+          onClick={() => chooseDiscover('demo')}
+        >
+          play card
+        </button>
+        <button
+          type="button"
+          className={`version-btn ${discover === 'door' ? 'is-active' : ''}`}
+          onClick={() => chooseDiscover('door')}
+        >
+          ask on phrase
+        </button>
+        <button
+          type="button"
+          className={`version-btn ${discover === 'once' ? 'is-active' : ''}`}
+          onClick={() => chooseDiscover('once')}
+        >
+          show once
+        </button>
+        <button
+          type="button"
+          className={`version-btn ${discover === 'input' ? 'is-active' : ''}`}
+          onClick={() => chooseDiscover('input')}
+        >
+          input hint
+        </button>
+        <button
+          type="button"
+          className={`version-btn ${discover === 'chip' ? 'is-active' : ''}`}
+          onClick={() => chooseDiscover('chip')}
+        >
+          selection cue
+        </button>
+        <button
+          type="button"
+          className={`version-btn ${discover === 'blob' ? 'is-active' : ''}`}
+          onClick={() => chooseDiscover('blob')}
+        >
+          ask on hover
+        </button>
+        <button
+          type="button"
+          className={`version-btn ${discover === 'nudge' ? 'is-active' : ''}`}
+          onClick={() => chooseDiscover('nudge')}
+        >
+          first nudge
+        </button>
+        <button
+          type="button"
+          className={`version-btn ${discover === 'rest' ? 'is-active' : ''}`}
+          onClick={() => chooseDiscover('rest')}
+        >
+          hover rest
+        </button>
+        <button
+          type="button"
+          className={`version-btn ${discover === 'legend' ? 'is-active' : ''}`}
+          onClick={() => chooseDiscover('legend')}
+        >
+          legend
+        </button>
+        <button
+          type="button"
+          className={`version-btn ${discover === 'margin' ? 'is-active' : ''}`}
+          onClick={() => chooseDiscover('margin')}
+        >
+          margin
+        </button>
+        <button
+          type="button"
+          className={`version-btn ${discover === 'cursor' ? 'is-active' : ''}`}
+          onClick={() => chooseDiscover('cursor')}
+        >
+          cursor
+        </button>
+        <button
+          type="button"
+          className={`version-btn ${discover === 'doorOnce' ? 'is-active' : ''}`}
+          onClick={() => chooseDiscover('doorOnce')}
+        >
+          one door
+        </button>
+        <button
+          type="button"
+          className={`version-btn ${discover === 'placeholder' ? 'is-active' : ''}`}
+          onClick={() => chooseDiscover('placeholder')}
+        >
+          field hint
+        </button>
+      </div>
       </div>
       )}
 
@@ -963,16 +1378,38 @@ export default function App() {
           >
             <div className="transcript-subhead">
               <span className="transcript-subhead__title">{currentQuestion.title}</span>
-              <span className="transcript-hint">Drag to ask a question</span>
+              {discover === 'none' && (
+                <span className="transcript-hint">Drag to ask a question</span>
+              )}
             </div>
 
             <div
-              className="transcript-body"
+              className={`transcript-body${discover === 'cursor' ? ' is-ask-cursor' : ''}`}
               ref={transcriptRef}
               onMouseUp={handleTranscriptMouseUp}
+              onMouseDown={
+                discover === 'hover' || discover === 'hoverInk' || discover === 'rest'
+                  ? hideHoverCue
+                  : undefined
+              }
+              onMouseMove={onTranscriptMove}
+              onMouseLeave={onTranscriptLeave}
             >
               {renderTranscript()}
             </div>
+
+            {discover === 'toast' && toastOn && (
+              <p className="ask-toast">Select to ask</p>
+            )}
+
+            {discover === 'demo' && demoOn && (
+              <button type="button" className="ask-demo" onClick={() => setDemoOn(false)}>
+                <span className="ask-demo__phrase">
+                  we met <span className="ask-demo__words">at a park</span>
+                </span>
+                <span className="ask-demo__pill">Select to ask</span>
+              </button>
+            )}
 
             <div className="followup-stack">
               {probes
@@ -988,7 +1425,61 @@ export default function App() {
                 ))}
             </div>
 
-            {selectionAsk && (
+            <button
+              type="button"
+              className="line-mark"
+              ref={lineMarkRef}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={openLineFromMark}
+              onMouseLeave={(event) => {
+                if (!event.relatedTarget?.closest?.('.transcript-body')) {
+                  event.currentTarget.classList.remove('is-on');
+                }
+              }}
+            >
+              ?
+            </button>
+
+            {((discover === 'hover' || discover === 'hoverInk') && !hoverCueSpent && !selectionAsk) ||
+            (discover === 'rest' && !selectionAsk) ? (
+              <span
+                className={`select-cue${discover === 'hoverInk' ? ' select-cue--ink' : ''}`}
+                ref={cueRef}
+              >
+                Select to ask
+              </span>
+            ) : null}
+
+            {discover === 'blob' && !selectionAsk && (
+              <button
+                type="button"
+                className="select-chip select-chip--float"
+                ref={hoverChipRef}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => openLineFromMark(hoverChipRef.current)}
+                onMouseLeave={(event) => {
+                  if (!event.relatedTarget?.closest?.('.transcript-body')) {
+                    event.currentTarget.classList.remove('is-on');
+                  }
+                }}
+              >
+                Ask about this
+              </button>
+            )}
+
+            {selectionAsk?.stage === 'chip' && (
+              <button
+                type="button"
+                className="select-chip"
+                style={{ top: selectionAsk.chipTop, left: selectionAsk.chipLeft }}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={openSelectionCard}
+              >
+                Ask about this
+              </button>
+            )}
+
+            {selectionAsk && selectionAsk.stage !== 'chip' && (
               <form
                 className={`select-ask${highlightAsk === 'original' ? ' select-ask--original' : ''}`}
                 ref={selectPanelRef}
@@ -1008,10 +1499,7 @@ export default function App() {
                   type="button"
                   className="select-ask__close"
                   aria-label="Close"
-                  onClick={() => {
-                    setSelectionAsk(null);
-                    setSelectInput('');
-                  }}
+                  onClick={dismissSelection}
                 >
                   ×
                 </button>
@@ -1095,6 +1583,9 @@ export default function App() {
       {(flowStep === 'readback' || flowStep === 'followup' || flowStep === 'done') && (
         <aside className={`bottom-dock bottom-dock--${dockStyle === 'ask' ? 'hover' : dockStyle}${embedding ? ' is-held' : ''}`}>
           <div className="dock-content">
+            {discover === 'nudge' && !nudgeSpent && flowStep !== 'done' && !embedding && (
+              <p className="ask-nudge">Select any text to ask about it.</p>
+            )}
             <div className="legend">
               <span className="legend-item">
                 <span className="legend-swatch legend-swatch--kept" /> Kept
@@ -1102,6 +1593,11 @@ export default function App() {
               <span className="legend-item">
                 <span className="legend-swatch legend-swatch--needs" /> Needs more
               </span>
+              {discover === 'legend' && (
+                <span className="legend-item">
+                  <span className="legend-swatch legend-swatch--ask" /> Drag to ask
+                </span>
+              )}
             </div>
             {flowStep === 'done' ? (
               // Flow 5: Done State
@@ -1143,6 +1639,9 @@ export default function App() {
                   )}
                 </h2>
 
+                {discover === 'input' && (
+                  <p className="dock-ask-hint">Select any text to ask about it.</p>
+                )}
                 <div className="dock-input-box">
                   <input
                     ref={dockInputRef}
@@ -1156,7 +1655,13 @@ export default function App() {
                         submitDock();
                       }
                     }}
-                    placeholder="Say as much as you want."
+                    placeholder={
+                      discover === 'placeholder' && !dockFieldFocused
+                        ? 'Or select text to ask about it.'
+                        : 'Say as much as you want.'
+                    }
+                    onFocus={() => setDockFieldFocused(true)}
+                    onBlur={() => setDockFieldFocused(false)}
                   />
                   <button
                     type="button"

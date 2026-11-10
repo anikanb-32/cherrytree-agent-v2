@@ -91,11 +91,18 @@
       </div>
     </div>
 
-    <div class="studio studio--rail-closed" id="studio" hidden>
+    <div class="studio studio--ai studio--rail-closed" id="studio" hidden>
       <header class="studio__bar">
-        <p class="studio__hint">Select text to rewrite or comment</p>
+        <div class="studio__brand">
+          <img src="cherries.png" alt="" />
+          <span>Cherrytree</span>
+        </div>
+        <p class="studio__hint">Select text to edit with AI</p>
         <span class="studio__crumb">Cofounder Agreement</span>
-        <span class="studio__meta">Draft · unexecuted</span>
+        <div class="studio__versions" role="group" aria-label="Draft version">
+          <button type="button" data-studio-version="ai" aria-pressed="true">Cherrytree Agent</button>
+          <button type="button" data-studio-version="comments">Comments</button>
+        </div>
       </header>
       <div class="studio__body">
         <div class="studio__main">
@@ -113,14 +120,42 @@
               <button type="button" class="studio-pop__apply" id="studio-pop-apply">Apply</button>
             </div>
           </div>
-          <button type="button" class="studio__rail-tab" id="studio-rail-tab">Updates</button>
+          <button type="button" class="studio__rail-tab" id="studio-rail-tab">Cherrytree Agent</button>
           <div class="studio__scroll">
-            <div class="studio__page">
-              <article class="studio__doc" id="studio-doc" contenteditable="true" spellcheck="false"></article>
+            <div class="studio__sheet">
+              <div class="studio__page">
+                <article class="studio__doc" id="studio-doc" contenteditable="true" spellcheck="false"></article>
+              </div>
+              <div class="studio__margin" id="studio-margin" aria-label="Comments"></div>
             </div>
           </div>
         </div>
-        <aside class="studio__rail" id="studio-rail" aria-label="Updates">
+        <aside class="studio__rail" id="studio-rail" aria-label="Cherrytree Agent">
+          <button type="button" class="studio__rail-resize" id="studio-rail-resize" aria-label="Resize sidebar"></button>
+          <div class="ai-panel" id="ai-panel">
+            <div class="ai-panel__head">
+              <h2>Cherrytree Agent</h2>
+              <button type="button" class="studio__rail-toggle" id="ai-rail-toggle" aria-expanded="false" aria-label="Hide Cherrytree Agent">›</button>
+            </div>
+            <div class="ai-log" id="ai-log"></div>
+            <form class="ai-composer" id="ai-composer">
+              <div class="ai-box">
+                <div class="ai-chip" id="ai-chip" hidden>
+                  <svg class="ai-select-icon" viewBox="0 0 16 16" aria-hidden="true">
+                    <path d="M2.4 4h6.2M2.4 7h5.2M2.4 10h3.6" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+                    <path d="M11.1 2.4v7.6M9.6 3.5h3M9.6 8.9h3" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+                  </svg>
+                  <span id="ai-chip-text"></span>
+                  <button type="button" id="ai-chip-clear" aria-label="Clear selection">×</button>
+                </div>
+                <textarea id="ai-input" rows="1" placeholder="Say what to change…"></textarea>
+                <div class="ai-box__bar">
+                  <button type="submit" class="ai-send" id="ai-send" aria-label="Send" disabled>↑</button>
+                </div>
+              </div>
+            </form>
+          </div>
+          <div class="studio__updates">
           <div class="studio__rail-head">
             <div class="studio__rail-title">
               <h2>Updates</h2>
@@ -128,13 +163,13 @@
             </div>
             <div class="studio__toggle" id="studio-toggle" role="tablist" aria-label="Update type">
               <button type="button" role="tab" data-filter="edits" aria-selected="true">Edits</button>
-              <button type="button" role="tab" data-filter="comments" aria-selected="false">Comments</button>
             </div>
           </div>
           <div class="studio__edits" id="studio-edits"></div>
           <div class="studio__actions">
             <button type="button" class="studio__reject" id="studio-reject">× Reject</button>
             <button type="button" class="studio__next" id="studio-next">Next →</button>
+          </div>
           </div>
         </aside>
       </div>
