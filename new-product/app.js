@@ -1434,10 +1434,19 @@ const studioSelect = document.getElementById('studio-select');
 const studioPopQuote = document.getElementById('studio-pop-quote');
 const studioPopNote = document.getElementById('studio-pop-note');
 const studioEditsEl = document.getElementById('studio-edits');
+const studioMargin = document.getElementById('studio-margin');
 let studioSel = { quote: '', range: null };
 let studioHistory = [];
+let studioThreads = [];
+let studioThreadSeq = 0;
+let studioLiveMark = null;
 let studioInited = false;
 let studioFilter = 'edits';
+let studioVersion = 'ai';
+let aiQuote = '';
+let aiRange = null;
+let aiEdits = [];
+let aiEditSeq = 0;
 
 function isStudioComment(item) {
   return item.kind === 'comment' || item.kind === 'clarify';
@@ -1554,12 +1563,22 @@ function applyStudioEdit(index) {
   }
 }
 
+const studioRailMin = 280;
+const studioRailMax = 520;
+
+function setStudioRailWidth(width) {
+  const next = Math.min(studioRailMax, Math.max(studioRailMin, width));
+  document.getElementById('studio-rail')?.style.setProperty('--rail-width', `${next}px`);
+}
+
 function setStudioRailOpen(open) {
   studio?.classList.toggle('studio--rail-closed', !open);
-  const btn = document.getElementById('studio-rail-toggle');
-  if (!btn) return;
-  btn.setAttribute('aria-expanded', String(open));
-  btn.setAttribute('aria-label', open ? 'Hide updates' : 'Show updates');
+  const label = studioVersion === 'ai' ? 'Cherrytree Agent' : 'updates';
+  [document.getElementById('studio-rail-toggle'), document.getElementById('ai-rail-toggle')].forEach((btn) => {
+    if (!btn) return;
+    btn.setAttribute('aria-expanded', String(open));
+    btn.setAttribute('aria-label', open ? `Hide ${label}` : `Show ${label}`);
+  });
 }
 
 function setStudioFilter(filter) {
@@ -1572,6 +1591,31 @@ function setStudioFilter(filter) {
 function hideStudioPop() {
   studioSelect.hidden = true;
   if (studioPopNote) studioPopNote.value = '';
+  clearStudioLiveMark();
+}
+
+function clearStudioLiveMark() {
+  if (!studioLiveMark?.isConnected) {
+    studioLiveMark = null;
+    return;
+  }
+  const text = document.createTextNode(studioLiveMark.textContent);
+  studioLiveMark.replaceWith(text);
+  studioLiveMark = null;
+}
+
+function takeStudioLiveMark() {
+  const mark = studioLiveMark;
+  studioLiveMark = null;
+  return mark?.isConnected ? mark : null;
+}
+
+function showStudioLiveMark(range) {
+  clearStudioLiveMark();
+  if (!range || range.collapsed) return;
+  const parent = range.commonAncestorContainer.parentElement || range.commonAncestorContainer;
+  if (parent.closest?.('.studio-mark')) return;
+  studioLiveMark = wrapStudioRange(range);
 }
 
 function placeStudioPop(rect) {
@@ -1586,16 +1630,296 @@ function placeStudioPop(rect) {
   studioSelect.style.left = `${left}px`;
 }
 
+function undoIcon() {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 16 16');
+  svg.setAttribute('aria-hidden', 'true');
+  ['M6.2 4.2 3.2 7.2l3 3', 'M3.6 7.2h6.1a3.1 3.1 0 0 1 0 6.2H8'].forEach((d) => {
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', d);
+    path.setAttribute('fill', 'none');
+    path.setAttribute('stroke', 'currentColor');
+    path.setAttribute('stroke-width', '1.4');
+    path.setAttribute('stroke-linecap', 'round');
+    path.setAttribute('stroke-linejoin', 'round');
+    svg.appendChild(path);
+  });
+  return svg;
+}
+
+function selectionIcon() {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 16 16');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.classList.add('ai-select-icon');
+  ['M2.4 4h6.2M2.4 7h5.2M2.4 10h3.6', 'M11.1 2.4v7.6M9.6 3.5h3M9.6 8.9h3'].forEach((d) => {
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', d);
+    path.setAttribute('fill', 'none');
+    path.setAttribute('stroke', 'currentColor');
+    path.setAttribute('stroke-width', '1.3');
+    path.setAttribute('stroke-linecap', 'round');
+    svg.appendChild(path);
+  });
+  return svg;
+}
+
+function clipAiQuote(text) {
+  const clean = text.replace(/\s+/g, ' ').trim();
+  return clean.length > 42 ? `${clean.slice(0, 42)}…` : clean;
+}
+
+function syncAiSend() {
+  const send = document.getElementById('ai-send');
+  const input = document.getElementById('ai-input');
+  if (!send || !input) return;
+  send.disabled = !aiQuote || !input.value.trim();
+}
+
+function clearAiSelection() {
+  aiQuote = '';
+  aiRange = null;
+  clearStudioLiveMark();
+  const chip = document.getElementById('ai-chip');
+  if (chip) chip.hidden = true;
+  syncAiSend();
+}
+
+function tagAiSelection() {
+  const sel = window.getSelection();
+  const text = sel?.toString().trim() || '';
+  if (!text || !sel.rangeCount || !studioDoc.contains(sel.anchorNode)) return;
+  const range = sel.getRangeAt(0).cloneRange();
+  aiQuote = text;
+  aiRange = range.cloneRange();
+  showStudioLiveMark(range);
+  const chip = document.getElementById('ai-chip');
+  const label = document.getElementById('ai-chip-text');
+  if (chip && label) {
+    label.textContent = clipAiQuote(text);
+    chip.hidden = false;
+    chip.title = text;
+  }
+  syncAiSend();
+  setStudioRailOpen(true);
+  document.getElementById('ai-input')?.focus();
+}
+
+function studioAiRewrite(quote, instruction) {
+  const ask = instruction.toLowerCase();
+  let next = quote;
+  if (/natural|plain|simple|clear|conversational|human/.test(ask)) {
+    [
+      [/\bshall\b/gi, 'will'],
+      [/unanimous written consent of all Founders/gi, 'agreement of every founder'],
+      [/ceases to provide services to the Company/gi, 'stops working at the company'],
+      [/repurchase unvested shares at cost/gi, 'buy back the shares that have not vested'],
+      [/\bin the event of\b/gi, 'if there is'],
+      [/\bprior to\b/gi, 'before'],
+    ].forEach(([from, to]) => {
+      next = next.replace(from, to);
+    });
+  }
+  if (/short|concise|brief|tighten/.test(ask)) {
+    const cut = quote.split(',')[0].trim();
+    if (cut && cut.length < quote.length) next = `${cut.replace(/\.$/, '')}.`;
+  }
+  if (next === quote) {
+    next = quote
+      .replace(/\ban even split\b/i, 'a 50/50 split')
+      .replace(/\bfour years\b/i, '4 years')
+      .replace(/\bone-year cliff\b/i, 'a cliff of one year')
+      .replace(/\bshall\b/gi, 'will');
+  }
+  if (next === quote) next = `In plain language: ${quote.replace(/\.$/, '')}.`;
+  return next;
+}
+
+function studioAiSummary(instruction) {
+  const ask = instruction.toLowerCase();
+  if (/natural|plain|simple|clear|conversational|human/.test(ask)) {
+    return { line: 'I revised the passage to sound more natural.', title: 'Smoothed the wording' };
+  }
+  if (/short|concise|brief|tighten/.test(ask)) {
+    return { line: 'I shortened the passage.', title: 'Shortened the wording' };
+  }
+  return { line: 'I updated the passage.', title: 'Updated the wording' };
+}
+
+function studioDiff(before, after) {
+  const a = before.split(/(\s+)/);
+  const b = after.split(/(\s+)/);
+  const dp = Array.from({ length: a.length + 1 }, () => new Uint16Array(b.length + 1));
+  for (let i = a.length - 1; i >= 0; i -= 1) {
+    for (let j = b.length - 1; j >= 0; j -= 1) {
+      dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+    }
+  }
+  const parts = [];
+  let i = 0;
+  let j = 0;
+  while (i < a.length && j < b.length) {
+    if (a[i] === b[j]) {
+      parts.push({ type: 'same', value: a[i] });
+      i += 1;
+      j += 1;
+    } else if (dp[i + 1][j] >= dp[i][j + 1]) {
+      parts.push({ type: 'del', value: a[i] });
+      i += 1;
+    } else {
+      parts.push({ type: 'ins', value: b[j] });
+      j += 1;
+    }
+  }
+  while (i < a.length) parts.push({ type: 'del', value: a[i++] });
+  while (j < b.length) parts.push({ type: 'ins', value: b[j++] });
+  return parts;
+}
+
+function paintAiMark(edit) {
+  if (!edit.mark?.isConnected || edit.reverted) return;
+  edit.mark.classList.add('studio-mark--quiet');
+  edit.mark.classList.toggle('studio-mark--diff', edit.showChanges);
+  if (!edit.showChanges) {
+    edit.mark.textContent = edit.after;
+    return;
+  }
+  edit.mark.replaceChildren();
+  studioDiff(edit.before, edit.after).forEach((part) => {
+    if (part.type === 'same') {
+      edit.mark.appendChild(document.createTextNode(part.value));
+      return;
+    }
+    const node = document.createElement(part.type === 'del' ? 'del' : 'ins');
+    node.className = part.type === 'del' ? 'ai-diff__old' : 'ai-diff__new';
+    node.textContent = part.value;
+    edit.mark.appendChild(node);
+  });
+}
+
+function renderAiLog() {
+  const log = document.getElementById('ai-log');
+  if (!log) return;
+  log.replaceChildren();
+  if (!aiEdits.length) return;
+  aiEdits.forEach((edit) => {
+    const block = el('div', 'ai-reply');
+    const user = el('div', 'ai-user');
+    const quote = el('p', 'ai-quote');
+    quote.append(selectionIcon(), document.createTextNode(clipAiQuote(edit.quote)));
+    user.append(quote, el('p', 'ai-ask', edit.instruction));
+    block.appendChild(user);
+    if (edit.pending) {
+      block.appendChild(el('p', 'ai-status', 'Working on this…'));
+    } else {
+      block.appendChild(el('p', 'ai-reply__meta', `Worked for ${edit.seconds}s`));
+      block.appendChild(el('p', 'ai-reply__line', edit.reverted ? 'Changes reverted.' : edit.summary.line));
+      const card = el('div', `ai-card${edit.reverted ? ' ai-card--reverted' : ''}`);
+      card.appendChild(
+        el('p', 'ai-card__title', edit.reverted ? 'Reverted' : `Cherrytree: ${edit.summary.title}`),
+      );
+      if (!edit.reverted) {
+        const actions = el('div', 'ai-card__actions');
+        const toggle = el('button', 'ai-card__toggle', edit.showChanges ? 'Hide changes' : 'Show changes');
+        toggle.type = 'button';
+        toggle.addEventListener('click', () => {
+          edit.showChanges = !edit.showChanges;
+          paintAiMark(edit);
+          renderAiLog();
+        });
+        const undo = el('button', 'ai-undo');
+        undo.type = 'button';
+        undo.setAttribute('aria-label', 'Undo');
+        undo.appendChild(undoIcon());
+        undo.addEventListener('click', () => undoAiEdit(edit.id));
+        actions.append(toggle, undo);
+        card.appendChild(actions);
+      }
+      block.appendChild(card);
+    }
+    log.appendChild(block);
+  });
+  log.scrollTop = log.scrollHeight;
+}
+
+function undoAiEdit(id) {
+  const edit = aiEdits.find((item) => item.id === id);
+  if (!edit || edit.pending || edit.reverted) return;
+  if (edit.mark?.isConnected) edit.mark.replaceWith(document.createTextNode(edit.before));
+  edit.reverted = true;
+  edit.showChanges = false;
+  renderAiLog();
+}
+
+function submitAiEdit(event) {
+  event.preventDefault();
+  const input = document.getElementById('ai-input');
+  const instruction = input?.value.trim() || '';
+  if (!instruction || !aiQuote) return;
+  const before = aiQuote;
+  const mark = takeStudioLiveMark() || markStudioQuote(before, aiRange);
+  const summary = studioAiSummary(instruction);
+  const edit = {
+    id: ++aiEditSeq,
+    quote: before,
+    before,
+    after: studioAiRewrite(before, instruction),
+    instruction,
+    mark,
+    summary,
+    showChanges: false,
+    reverted: false,
+    pending: true,
+    started: Date.now(),
+    seconds: 1,
+  };
+  aiEdits.push(edit);
+  input.value = '';
+  clearAiSelection();
+  renderAiLog();
+  window.setTimeout(() => {
+    if (!aiEdits.includes(edit) || edit.reverted) return;
+    edit.pending = false;
+    edit.seconds = Math.max(1, Math.round((Date.now() - edit.started) / 1000));
+    if (edit.mark?.isConnected) edit.mark.textContent = edit.after;
+    edit.mark?.classList.add('studio-mark--quiet');
+    renderAiLog();
+  }, 1200);
+}
+
+function setStudioVersion(version) {
+  studioVersion = version === 'comments' ? 'comments' : 'ai';
+  studio.classList.toggle('studio--ai', studioVersion === 'ai');
+  studio.classList.toggle('studio--comments', studioVersion === 'comments');
+  document.querySelectorAll('[data-studio-version]').forEach((button) => {
+    button.setAttribute('aria-pressed', String(button.dataset.studioVersion === studioVersion));
+  });
+  const hint = document.querySelector('.studio__hint');
+  if (hint) {
+    hint.textContent = studioVersion === 'ai' ? 'Select text to edit with AI' : 'Select text to rewrite or comment';
+  }
+  const tab = document.getElementById('studio-rail-tab');
+  if (tab) tab.textContent = studioVersion === 'ai' ? 'Cherrytree Agent' : 'Updates';
+  document.getElementById('studio-rail')?.setAttribute('aria-label', studioVersion === 'ai' ? 'Cherrytree Agent' : 'Updates');
+  if (studioVersion === 'ai') hideStudioPop();
+}
+
 function captureStudioSelection() {
+  if (studioVersion === 'ai') {
+    tagAiSelection();
+    return;
+  }
   if (!studioSelect.hidden && studioSelect.contains(document.activeElement)) return;
   const sel = window.getSelection();
   const text = sel?.toString().trim() || '';
   if (!text || !sel.rangeCount || !studioDoc.contains(sel.anchorNode)) {
     return;
   }
-  studioSel = { quote: text, range: sel.getRangeAt(0).cloneRange() };
-  if (studioPopQuote) studioPopQuote.textContent = `“${text}”`;
+  const range = sel.getRangeAt(0).cloneRange();
+  studioSel = { quote: text, range };
+  if (studioPopQuote) studioPopQuote.textContent = text;
   if (studioPopNote) studioPopNote.value = '';
+  showStudioLiveMark(range.cloneRange());
   studioSelect.hidden = false;
   placeStudioPop(studioSel.range.getBoundingClientRect());
   setTimeout(() => studioPopNote?.focus(), 0);
@@ -1632,21 +1956,135 @@ function markStudioQuote(quote, range) {
   return null;
 }
 
+function commentClock(date = new Date()) {
+  const hour = date.getHours();
+  const minute = String(date.getMinutes()).padStart(2, '0');
+  const suffix = hour >= 12 ? 'PM' : 'AM';
+  return `${hour % 12 || 12}:${minute} ${suffix} Today`;
+}
+
+function placeStudioThreads() {
+  if (!studioMargin) return;
+  const host = studioMargin.getBoundingClientRect();
+  let floor = 0;
+  studioThreads.forEach((thread) => {
+    if (!thread.card || !thread.mark?.isConnected) return;
+    let top = thread.mark.getBoundingClientRect().top - host.top;
+    if (top < floor) top = floor;
+    thread.card.style.top = `${Math.max(0, top)}px`;
+    floor = top + thread.card.offsetHeight + 12;
+  });
+}
+
+function threadComment({ name, initial, agent, time, body }) {
+  const item = el('div', 'studio-thread__item');
+  const who = el('div', 'studio-thread__who');
+  if (agent) {
+    const avatar = el('span', 'studio-thread__avatar studio-thread__avatar--agent');
+    const img = document.createElement('img');
+    img.src = 'cherries.png';
+    img.alt = '';
+    avatar.appendChild(img);
+    who.appendChild(avatar);
+  } else {
+    who.appendChild(el('span', 'studio-thread__avatar', initial));
+  }
+  const id = el('span', 'studio-thread__id');
+  id.append(el('span', 'studio-thread__name', name), el('span', 'studio-thread__time', time));
+  who.appendChild(id);
+  item.append(who, el('p', 'studio-thread__body', body));
+  return item;
+}
+
+function renderStudioThread(thread) {
+  const card = thread.card || el('article', 'studio-thread');
+  card.replaceChildren();
+  card.appendChild(threadComment({ name: 'You', initial: 'Y', time: thread.time, body: thread.note }));
+  if (!thread.reply) {
+    card.appendChild(el('p', 'studio-thread__pending', 'Cherrytree is replying…'));
+  } else {
+    const agent = threadComment({
+      name: 'Cherrytree',
+      agent: true,
+      time: thread.reply.time,
+      body: thread.reply.body,
+    });
+    agent.appendChild(el('p', 'studio-thread__suggestion', thread.reply.suggestion));
+    const actions = el('div', 'studio-thread__actions');
+    const approve = el('button', 'studio-thread__approve', 'Approve');
+    approve.type = 'button';
+    approve.addEventListener('click', () => approveStudioThread(thread.id));
+    actions.appendChild(approve);
+    agent.appendChild(actions);
+    card.appendChild(agent);
+  }
+  const close = el('button', 'studio-thread__close', '×');
+  close.type = 'button';
+  close.setAttribute('aria-label', 'Dismiss comment');
+  close.addEventListener('click', () => dismissStudioThread(thread.id));
+  card.appendChild(close);
+  thread.card = card;
+  if (!card.parentElement) studioMargin.appendChild(card);
+  placeStudioThreads();
+}
+
+function dismissStudioThread(id) {
+  const thread = studioThreads.find((item) => item.id === id);
+  if (!thread) return;
+  if (thread.mark?.isConnected) thread.mark.replaceWith(document.createTextNode(thread.mark.textContent));
+  thread.card?.remove();
+  studioThreads = studioThreads.filter((item) => item.id !== id);
+  placeStudioThreads();
+}
+
+function approveStudioThread(id) {
+  const thread = studioThreads.find((item) => item.id === id);
+  if (!thread?.reply?.suggestion) return;
+  if (thread.mark?.isConnected) {
+    thread.mark.replaceWith(document.createTextNode(thread.reply.suggestion));
+  } else {
+    replaceStudioQuote(thread.quote, thread.reply.suggestion);
+  }
+  thread.card?.remove();
+  studioThreads = studioThreads.filter((item) => item.id !== id);
+  placeStudioThreads();
+}
+
 function addStudioComment() {
   const note = studioPopNote?.value.trim();
   if (!studioSel.quote || !note) return;
-  markStudioQuote(studioSel.quote, studioSel.range);
-  studioHistory.unshift({ kind: 'comment', quote: studioSel.quote, body: note });
-  setStudioFilter('comments');
-  renderStudioEdits();
+  const thread = {
+    id: ++studioThreadSeq,
+    quote: studioSel.quote,
+    note,
+    time: commentClock(),
+    mark: takeStudioLiveMark() || markStudioQuote(studioSel.quote, studioSel.range),
+    reply: null,
+    card: null,
+  };
+  studioThreads.push(thread);
+  renderStudioThread(thread);
   hideStudioPop();
   window.getSelection()?.removeAllRanges();
+  window.setTimeout(() => {
+    if (!studioThreads.includes(thread)) return;
+    thread.reply = {
+      time: commentClock(),
+      body: 'I can put that into the agreement. Here’s the wording I’d use:',
+      suggestion:
+        window.Conversation?.draftAssist({ intent: 'rewrite', quote: thread.quote, text: thread.note }) ||
+        thread.quote,
+    };
+    renderStudioThread(thread);
+  }, 1800);
 }
 
 function applyStudioComment() {
   const next = studioPopNote?.value.trim();
   if (!studioSel.quote || !next) return;
-  replaceStudioQuote(studioSel.quote, next);
+  const mark = takeStudioLiveMark();
+  if (mark) mark.replaceWith(document.createTextNode(next));
+  else replaceStudioQuote(studioSel.quote, next);
   studioHistory.unshift({ kind: 'rewrite', quote: studioSel.quote, body: next, applied: true });
   setStudioFilter('edits');
   renderStudioEdits();
@@ -1690,14 +2128,54 @@ function enterDraftMode() {
     studioInited = true;
   }
   renderStudioEdits();
+  renderAiLog();
+  const requested = new URLSearchParams(location.search).get('studio');
+  setStudioVersion(requested === 'comments' ? 'comments' : 'ai');
 }
+
+document.querySelector('.studio__versions')?.addEventListener('click', (event) => {
+  const button = event.target.closest('[data-studio-version]');
+  if (!button) return;
+  setStudioVersion(button.dataset.studioVersion);
+});
+
+document.getElementById('ai-composer')?.addEventListener('submit', submitAiEdit);
+document.getElementById('ai-input')?.addEventListener('input', syncAiSend);
+document.getElementById('ai-input')?.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter' && !event.shiftKey) {
+    event.preventDefault();
+    submitAiEdit(event);
+  }
+});
+document.getElementById('ai-chip-clear')?.addEventListener('click', clearAiSelection);
 
 document.getElementById('studio-rail-toggle')?.addEventListener('click', (event) => {
   event.stopPropagation();
   setStudioRailOpen(studio.classList.contains('studio--rail-closed'));
 });
+document.getElementById('ai-rail-toggle')?.addEventListener('click', (event) => {
+  event.stopPropagation();
+  setStudioRailOpen(studio.classList.contains('studio--rail-closed'));
+});
 document.getElementById('studio-rail-tab')?.addEventListener('click', () => {
   setStudioRailOpen(true);
+});
+
+document.getElementById('studio-rail-resize')?.addEventListener('pointerdown', (event) => {
+  const rail = document.getElementById('studio-rail');
+  if (!rail || studio.classList.contains('studio--rail-closed')) return;
+  event.preventDefault();
+  rail.classList.add('is-resizing');
+  const startX = event.clientX;
+  const startWidth = rail.getBoundingClientRect().width;
+  const move = (pointer) => setStudioRailWidth(startWidth - (pointer.clientX - startX));
+  const stop = () => {
+    rail.classList.remove('is-resizing');
+    window.removeEventListener('pointermove', move);
+    window.removeEventListener('pointerup', stop);
+  };
+  window.addEventListener('pointermove', move);
+  window.addEventListener('pointerup', stop);
 });
 
 document.getElementById('studio-toggle')?.addEventListener('click', (event) => {
@@ -1734,6 +2212,8 @@ document.getElementById('studio-next')?.addEventListener('click', () => {
   const next = Math.min(currentSection + 1, SECTIONS.length - 1);
   openSection(next);
 });
+
+window.addEventListener('resize', placeStudioThreads);
 
 studioDoc?.addEventListener('input', () => {
   const last = studioHistory[0];
